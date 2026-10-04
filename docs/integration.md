@@ -1,6 +1,24 @@
 # Integrating and releasing Places
 
-The foundation is built locally. No Cloudflare resources have been provisioned, no production data has been changed, and the sibling repositories have not been modified.
+The private Places Worker and frontend were deployed on 4 October 2026. The production D1 database is provisioned and both migrations are applied. The gateway release remains pending the shared signing secret; the sibling repositories have not been modified.
+
+## Deployment status
+
+- Account: `4228a8b5a0cd76f123470d7f29cafb02` (Joker22Hero).
+- Worker: `quollity-places`; deployed version `2d259df3-d902-4fa2-859d-4b9f787bd4c5`.
+- D1: `quollity-places-db`, ID `f4a30168-4d4d-4830-8a4f-24150bd2bbf4`.
+- Database verification: 18 place types, two people, two migration history entries, zero places.
+- Production bindings: `DB`, `TRIPS` (`travel-visual`), and `ASSETS`; authentication mode `gateway`. Workers.dev and preview URLs are disabled.
+- Required before gateway release: set `QUOLLITY_INTERNAL_SECRET` to the existing gateway/Trips value. The new Worker currently has no secrets. Do not generate a different value or rotate the existing services for this deployment.
+- The patched gateway release was prepared in `/private/tmp/quollity-places-gateway-release` without changing its source repository. Type checking, all 23 gateway tests, and Wrangler deployment dry run passed. That directory is temporary; recreate it from the checked-in patch if unavailable.
+
+Set the secret securely from the Places repository; Wrangler prompts for the value:
+
+```sh
+./node_modules/.bin/wrangler secret put QUOLLITY_INTERNAL_SECRET --env production
+```
+
+Then deploy the prepared gateway release and verify authenticated viewer/editor access at `https://quollity.uk/places/`. End-to-end production verification is still pending.
 
 ## Gateway
 
@@ -17,13 +35,13 @@ The patch is prepared against the gateway files present when this foundation was
 
 ## Production configuration
 
-1. Provision the dedicated `quollity-places-db` D1 database and record its real database ID in the production environment of `wrangler.jsonc`.
+1. Use the dedicated `quollity-places-db` D1 database recorded in the production environment of `wrangler.jsonc`; it is already provisioned.
 2. Configure `QUOLLITY_INTERNAL_SECRET` as a Worker secret using the same trusted shared secret as the gateway and Trips. Never commit it.
-3. Apply Places migrations to the production D1 database after reviewing the schema.
+3. Apply pending Places migrations to the production D1 database after reviewing the schema. The initial two migrations are already applied and recorded in `d1_migrations`.
 4. Run the production build and Wrangler dry run. Production auth must remain `gateway`; Workers.dev and preview URLs must remain disabled.
 5. Deploy the private child Worker, then release the gateway change and verify viewer/editor access through `/places/`.
 
-The configuration intentionally has no resource IDs or R2 bucket. Do not deploy until the intended D1 database has been explicitly selected. Deployment is outside the current architecture task.
+The production configuration selects the dedicated database by its real ID. Places has no R2 bucket or independent photo storage.
 
 ## Trips
 
