@@ -1,0 +1,3 @@
+# Production uses a shared secret configured with wrangler secret put.
+# This value is only for local multi-Worker integration; replace before use.
+QUOLLITY_INTERNAL_SECRET=local-development-only-change-me
