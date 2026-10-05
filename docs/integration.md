@@ -1,6 +1,6 @@
 # Integrating and releasing Places
 
-The private Places Worker and frontend were deployed on 4 October 2026. The production D1 database is provisioned and both migrations are applied. On 5 October 2026, the shared signing secret was replaced across all four Workers and the Places gateway connection was deployed. The sibling source repositories have not been modified.
+The private Places Worker and frontend were deployed on 4 October 2026. The production D1 database is provisioned and both migrations are applied. On 5 October 2026, the shared signing secret was replaced across all four Workers and the Places gateway connection was deployed. The gateway source patch was subsequently applied, committed, and redeployed from its source repository.
 
 ## Deployment status
 
@@ -11,7 +11,8 @@ The private Places Worker and frontend were deployed on 4 October 2026. The prod
 - Production bindings: `DB`, `TRIPS` (`travel-visual`), and `ASSETS`; authentication mode `gateway`. Workers.dev and preview URLs are disabled.
 - `QUOLLITY_INTERNAL_SECRET` was replaced with one cryptographically random 256-bit value on `quollity-gateway`, `zoo-visual`, `travel-visual`, and `quollity-places`. All four Wrangler secret updates succeeded. Gateway `VIEWER_PASSWORD` and `SESSION_SIGNING_SECRET` remain configured.
 - The recoverable shared secret is saved in the Places repository's ignored `.dev.vars.production`, with owner-only permissions (`0600`). Never commit or print its contents. This file is not covered by Git backups; keep a separate secure backup, such as a password manager.
-- Gateway deployment version: `ee998a84-6d6a-4ded-a806-79a01c0bc7ba`. It includes the `PLACES` binding and `/places/` routing.
+- Gateway source commit: `6b379bd` (`Connect Quollity Places to gateway navigation and routing`); its working tree is clean.
+- Gateway deployment version: `05f7bc7e-81fd-4cb4-93a3-a7119bb8de65`. It includes the `PLACES` binding and `/places/` routing. Deployment used `--keep-vars`.
 - The patched gateway release was prepared in `/private/tmp/quollity-places-gateway-release` without changing its source repository. Type checking, all 23 gateway tests, and Wrangler deployment dry run passed. That directory is temporary; recreate it from the checked-in patch if unavailable.
 
 For a future secret change from the Places repository, Wrangler can prompt securely:
@@ -20,7 +21,7 @@ For a future secret change from the Places repository, Wrangler can prompt secur
 ./node_modules/.bin/wrangler secret put QUOLLITY_INTERNAL_SECRET --env production
 ```
 
-The gateway release is deployed. Authenticated viewer/editor browser verification at `https://quollity.uk/places/` is still pending: the native browser connection failed during this release. The gateway source repository still needs the checked-in patch applied before its next deployment, otherwise that deployment would remove the Places integration.
+The gateway release is deployed from its committed source repository. Authenticated viewer/editor browser verification at `https://quollity.uk/places/` is still pending: the native browser connection failed during this release, and the web retrieval tool could not access the private component pages.
 
 ## Gateway
 
