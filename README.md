@@ -25,7 +25,7 @@ pnpm build:production
 pnpm deploy:dry-run
 ```
 
-The production build uses `/places/` and gateway authentication. The private Worker, frontend assets, and database are deployed; the shared signing secret and gateway release remain pending. See [deployment status](docs/integration.md#deployment-status).
+The production build uses `/places/` and gateway authentication. The private Worker, frontend assets, database, shared signing secret, and gateway connection are deployed. Authenticated browser verification remains pending. See [deployment status](docs/integration.md#deployment-status).
 
 Read the [architecture](docs/architecture.md), [API contract](docs/api.md), and [integration/release notes](docs/integration.md) for implementation details and verification limits. A reviewable [gateway patch](docs/gateway-integration.patch) is included.
 
