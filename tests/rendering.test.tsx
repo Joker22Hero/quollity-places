@@ -132,6 +132,13 @@ describe('React page rendering', () => {
     expect(html).toContain('href="/#account"');
     expect(html).toContain('Add place');
     expect(html).toContain('aria-label="Places navigation"');
+    expect(html).toContain('aria-label="Quollity Places home"');
+    expect(html).toContain('Quollity Places</strong>');
+    expect(html).toMatch(/src="[^"]*images\/quollityplaces-logo-128\.png"/);
+    expect(html).not.toContain('aria-label="Quollity navigation"');
+    expect(html).not.toContain('href="/zoos/"');
+    expect(html).toContain('href="/rankings"');
+    expect(html).toContain('href="/people"');
   });
 
   it('starts new-place entry with search and an accessible manual fallback', () => {

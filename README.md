@@ -58,8 +58,13 @@ Places uses museum terracotta `#82483e`, cream `#f3e5d5` and oxblood `#65382f`,
 with Quollity paper `#f3efe4` and the shared green `#173f35` anchor. Tokens live
 in `src/design.css`; Georgia titles, quiet sans-serif controls and an 1180px
 archive frame follow the family guide in `../quollity-gateway/docs/design-language.md`.
-Product navigation, heading/action accents and architectural card panels make
-Places distinct from Zoos and Trips. No new mascot or logo is introduced.
+The ruled header follows Zoos: serif product lockup, small diary subtitle,
+product links and a compact viewer/editor badge in one row (wrapped on phones).
+The shared paper rhythm, typography, frame and interactions connect the family;
+terracotta heading/action accents and architectural panels identify Places.
+The supplied museum capybara/quoll logo is used unchanged in the header and
+favicon, with base-aware URLs. The canonical PNG and resized derivatives live
+in `public/images/`; keep its proportions and do not recolour or redraw it.
 
 The header shows viewer/editor status and links to `/#account`. Editor sign-in
 and sign-out belong to the Gateway; its root-scoped session is shared by all

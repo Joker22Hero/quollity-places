@@ -13,20 +13,28 @@ export function Shell() {
       <a className="skip-link" href="#places-content">
         Skip to Places
       </a>
-      <header className="places-header">
-        <nav className="main-nav" aria-label="Quollity navigation">
-          <a className="brand" href="/">
-            Quollity
-          </a>
-          <a className="sibling" href="/zoos/">
-            Zoos
-          </a>
-          <a className="sibling" href="/trips/">
-            Trips
-          </a>
-          <span className="nav-spacer" />
+      <header className="topbar">
+        <Link to="/" className="brand" aria-label="Quollity Places home">
+          <img
+            className="brand-logo"
+            src={`${import.meta.env.BASE_URL}images/quollityplaces-logo-128.png`}
+            width="44"
+            height="44"
+            alt=""
+          />
+          <span>
+            <strong>Quollity Places</strong>
+            <small>Places diary</small>
+          </span>
+        </Link>
+        <nav className="utility-nav" aria-label="Places navigation">
+          <NavLink to="/" end>
+            Places
+          </NavLink>
+          <NavLink to="/rankings">Rankings</NavLink>
+          <NavLink to="/people">People</NavLink>
           <a
-            className="account-link"
+            className="access-state"
             href="/#account"
             aria-label={
               session.readOnly
@@ -34,22 +42,10 @@ export function Shell() {
                 : `Signed in as ${session.person?.displayName ?? 'editor'} · Quollity account`
             }
           >
-            <span>
-              {session.readOnly
-                ? 'Read-only'
-                : `${session.person?.displayName ?? 'Editor'} · Editor`}
-            </span>
-            <span className="account-link-label">
-              Account <span aria-hidden="true">↗</span>
-            </span>
+            {session.readOnly
+              ? 'Read-only'
+              : `${session.person?.displayName ?? 'Editor'} · Editor`}
           </a>
-        </nav>
-        <nav className="product-nav" aria-label="Places navigation">
-          <NavLink to="/" end>
-            Places
-          </NavLink>
-          <NavLink to="/rankings">Rankings</NavLink>
-          <NavLink to="/people">People</NavLink>
         </nav>
       </header>
       <main id="places-content" tabIndex={-1}>

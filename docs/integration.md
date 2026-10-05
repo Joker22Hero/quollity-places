@@ -97,3 +97,19 @@ Live anonymous `/places/` redirects to `/access`, `/places/api/session` returns
 viewer/editor rendering remains unverified because automatic approval review
 blocked reading Safari's unrelated private booking tab; local fixtures cover
 both roles and the shared account handoff.
+
+## Zoo-style Places header — 5 October 2026
+
+Places now follows the Zoo header composition: a 44px supplied museum logo,
+serif product name/diary subtitle, Places/Rankings/People navigation and one
+shared account access badge. At phone sizes the links wrap under the lockup.
+The former separate family menu and terracotta navigation strip are removed;
+`/#account` remains the shared account destination. Paper ruling, the 1180px
+frame and compact controls follow Zoo proportions while Places keeps museum
+terracotta/cream accents. The original supplied PNG is preserved alongside a
+128px header/favicon derivative; URLs use the production `/places/` base.
+
+Verified locally: 56 tests, TypeScript, production build/dry run, and mocked
+browser fixtures at 1440/820/390/320px with no overflow. Viewer/editor account
+handoffs, primary navigation, creation boundary, keyboard focus, hover/reduced
+motion and loading/error checks passed. No API, permission or database changes.
