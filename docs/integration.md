@@ -68,7 +68,7 @@ The managed sandbox blocked package downloads and binding local server ports. Te
 
 `worker-configuration.d.ts` contains generated binding types. `worker/runtime.d.ts` is a temporary, licensed runtime-type snapshot from Zoos generated with the same installed Wrangler/workerd versions. `pnpm cf:typegen` regenerates the full types and removes that snapshot after successful runtime generation.
 
-## Places identity and account pass — 5 October 2026 (not deployed)
+## Places identity and account release — 5 October 2026
 
 Applied the family museum-terracotta/cream palette, shared green anchor,
 responsive two-row navigation, accessible hover/focus and reduced motion.
@@ -84,4 +84,16 @@ loading/error states. The installed local Worker emulator cannot run the
 existing October compatibility date; browser checks used a frontend-only Vite
 preview with mocked APIs. No live identity login or production reads/writes were
 performed. Release this alongside the Gateway shared-account commit `d09a67a`;
-production deployment remains a separate action.
+the subsequent production release is recorded below.
+
+Commit `9aab6d9` was deployed as private Worker version
+`68701153-806e-463d-b5fd-00f707f1bfc2`, alongside Gateway version
+`47a42c71-6ea0-4d9a-a616-9529c8a5f06e` and Zoo version
+`96671056-5fa4-4757-a8fc-f1bfff21e5d2`. Fresh tests/typecheck/production build
+and dry run passed before publication. Existing database bindings and gateway
+auth were retained; no migration, production data write or secret change.
+Live anonymous `/places/` redirects to `/access`, `/places/api/session` returns
+401, and `/editor` reaches the existing Cloudflare Access login. Signed-in live
+viewer/editor rendering remains unverified because automatic approval review
+blocked reading Safari's unrelated private booking tab; local fixtures cover
+both roles and the shared account handoff.
