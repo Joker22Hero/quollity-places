@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { placeFactsSchema } from './place-facts';
 
 export const personSchema = z.object({
   id: z.uuid(),
@@ -47,6 +48,7 @@ const placeFields = {
     .nullable()
     .default(null),
   description: optionalText(10000),
+  facts: placeFactsSchema.default(() => placeFactsSchema.parse({})),
   notes: optionalText(20000),
   operator: optionalText(200),
   meetingPoint: optionalText(500),

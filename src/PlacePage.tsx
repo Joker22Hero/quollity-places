@@ -244,7 +244,7 @@ export function PlacePage() {
                 className="secondary"
                 onClick={() => setRepairLocation(!repairLocation)}
               >
-                Find location
+                Refresh external details
               </button>
             )}
             {repairLocation && canEdit && (
@@ -279,6 +279,11 @@ export function PlacePage() {
                 />
               </>
             )}
+            {place.facts.streetAddress && <p>{[place.facts.streetAddress,place.facts.postcode].filter(Boolean).join(', ')}</p>}
+            {place.facts.phone && <p>{place.facts.phone}</p>}
+            {place.facts.operatingStatus && <p>{place.facts.operatingStatus.replaceAll('_',' ')}</p>}
+            {place.facts.localName && place.facts.localName!==place.name && <p>Local name: {place.facts.localName}</p>}
+            {place.facts.socialLinks.map(url=><p key={url}><a href={url} target="_blank" rel="noreferrer">{new URL(url).hostname} ↗</a></p>)}
             {place.websiteUrl && (
               <p>
                 <a href={place.websiteUrl} target="_blank" rel="noreferrer">
@@ -287,6 +292,7 @@ export function PlacePage() {
               </p>
             )}
           </section>
+          {place.facts.referenceImage && <section><h2>Reference image</h2><img className="reference-image" src={place.facts.referenceImage.thumbnailUrl} alt={`Reference image of ${place.name}`} loading="lazy" /><small><a href={place.facts.referenceImage.sourceUrl} target="_blank" rel="noreferrer">{place.facts.referenceImage.creator}</a>{' · '}<a href={place.facts.referenceImage.licenseUrl} target="_blank" rel="noreferrer">{place.facts.referenceImage.license}</a></small><p className="muted">External reference, separate from your visit photos in Snaps.</p></section>}
           {place.placeKind === 'experience' && (
             <section>
               <h2>Experience</h2>

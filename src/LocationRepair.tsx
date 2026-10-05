@@ -11,6 +11,7 @@ import { MutationForm } from './components';
 import { PlaceLookup, Attribution } from './PlaceLookup';
 import { useReferenceData } from './state';
 import type { z } from 'zod';
+const formatValue=(value:unknown):string => value===null?'Not recorded':typeof value==='object'?JSON.stringify(value):String(value);
 export function LocationRepair({
   place,
   onDone,
@@ -31,7 +32,7 @@ export function LocationRepair({
   const [fields, setFields] = useState<LocationField[]>([]);
   return (
     <section>
-      <h3>Find location</h3>
+      <h3>Refresh external details</h3>
       {!preview ? (
         <>
           <fieldset disabled={busy}>
@@ -86,7 +87,7 @@ export function LocationRepair({
           <Attribution candidate={preview.candidate} />
           {preview.changes.length ? (
             <MutationForm
-              label="Apply selected location details"
+              label="Apply selected factual details"
               onCancel={onDone}
               onSave={async () => {
                 if (!selection || !fields.length)
@@ -134,8 +135,8 @@ export function LocationRepair({
                       />
                       <span>
                         {change.field}:{' '}
-                        {String(change.current ?? 'Not recorded')} →{' '}
-                        {String(change.proposed ?? 'Not recorded')}
+                        {formatValue(change.current)} →{' '}
+                        {formatValue(change.proposed)}
                         {change.protected ? ' · Your existing value' : ''}
                       </span>
                     </label>

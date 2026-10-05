@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { countryCodeSchema, placeInputSchema, placeSchema } from './contracts';
+import { externalIdSchema, httpUrlSchema, placeFactsSchema } from './place-facts';
 export const locationFields = [
   'city',
   'region',
@@ -7,9 +8,12 @@ export const locationFields = [
   'latitude',
   'longitude',
   'websiteUrl',
+  'name',
+  'description',
+  'facts',
 ] as const;
 export type LocationField = (typeof locationFields)[number];
-export const attributionSchema = z.object({ label: z.string(), url: z.url() });
+export const attributionSchema = z.object({ label: z.string().max(1000), url: httpUrlSchema });
 export const candidateSchema = z.object({
   candidateId: z.string(),
   name: z.string().trim().min(1).max(200),
@@ -18,7 +22,14 @@ export const candidateSchema = z.object({
   countryCode: countryCodeSchema.nullable(),
   latitude: z.number().min(-90).max(90).nullable(),
   longitude: z.number().min(-180).max(180).nullable(),
-  websiteUrl: z.url().nullable(),
+  websiteUrl: httpUrlSchema.nullable(),
+  description: z.string().max(10000).nullable().default(null),
+  facts: placeFactsSchema.default(() => placeFactsSchema.parse({})),
+  externalIds: z.array(externalIdSchema).max(8).default([]),
+  enrichment: z.object({
+    status: z.enum(['not_requested', 'enriched', 'no_match', 'unavailable']),
+    checkedAt: z.iso.datetime().nullable(),
+  }).default({ status: 'not_requested', checkedAt: null }),
   suggestedTypeId: z.string(),
   precision: z.enum(['place', 'address', 'approximate']),
   kind: z.enum(['place', 'address', 'locality']),
@@ -83,6 +94,8 @@ const overridesSchema = z
     latitude: placeInputSchema.shape.latitude,
     longitude: placeInputSchema.shape.longitude,
     websiteUrl: placeInputSchema.shape.websiteUrl,
+    description: placeInputSchema.shape.description,
+    facts: placeInputSchema.shape.facts,
   })
   .partial()
   .refine(
@@ -97,7 +110,7 @@ export const importInputSchema = z.strictObject({
   wishlist: z.boolean().default(false),
   notes: z.string().trim().max(20000).nullable().default(null),
   shortName: z.string().trim().max(100).nullable().default(null),
-  description: z.string().trim().max(10000).nullable().default(null),
+  description: z.string().trim().max(10000).nullable().optional(),
   operator: z.string().trim().max(200).nullable().default(null),
   meetingPoint: z.string().trim().max(500).nullable().default(null),
   durationMinutes: z.number().int().min(1).max(10080).nullable().default(null),
@@ -132,8 +145,8 @@ export const previewResponseSchema = z.object({
   changes: z.array(
     z.object({
       field: z.enum(locationFields),
-      current: z.union([z.string(), z.number(), z.null()]),
-      proposed: z.union([z.string(), z.number(), z.null()]),
+      current: z.union([z.string(), z.number(), z.null(), placeFactsSchema]),
+      proposed: z.union([z.string(), z.number(), z.null(), placeFactsSchema]),
       protected: z.boolean(),
     }),
   ),

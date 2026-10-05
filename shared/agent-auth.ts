@@ -44,7 +44,7 @@ export function requiredAgentScope(
     return 'places:read';
   if (method === 'GET' && /^\/api\/places\/[a-f0-9-]{36}$/.test(path))
     return 'places:read';
-  if (method === 'POST' && path === '/api/place-lookups')
+  if (method === 'POST' && ['/api/place-lookups', '/api/places/resolve'].includes(path))
     return 'places:lookup';
   if (method === 'POST' && ['/api/places', '/api/places/import'].includes(path))
     return 'places:create';

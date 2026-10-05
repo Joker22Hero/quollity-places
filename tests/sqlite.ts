@@ -23,6 +23,7 @@ export function database() {
       'utf8',
     ),
   );
+  sqlite.exec(readFileSync(new URL('../migrations/0004_place_enrichment.sql', import.meta.url), 'utf8'));
   function prepared(sql: string, values: SQLInputValue[] = []) {
     return {
       bind(...next: SQLInputValue[]) {

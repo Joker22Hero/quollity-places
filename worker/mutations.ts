@@ -169,7 +169,7 @@ export const placeJson = `json_object(${Object.entries(placeColumns)
   .map(([k, v]) => `'${k}',p.${v}`)
   .join(
     ',',
-  )},'wishlist',json(CASE WHEN p.wishlist=1 THEN 'true' ELSE 'false' END))`;
+  )},'facts',json(p.facts),'wishlist',json(CASE WHEN p.wishlist=1 THEN 'true' ELSE 'false' END))`;
 export const savedPlaceExpression = `(SELECT json_object('place',${placeJson}) FROM place_summaries p WHERE p.id=?)`;
 export const importedPlaceExpression = (
   outcome: 'created' | 'existing',

@@ -1,6 +1,7 @@
 import type { Board, Place, Visit, SnapLink } from '../shared/contracts';
 import { snapUrl } from '../shared/paths';
 import { fail } from './http';
+import { placeFactsSchema } from '../shared/place-facts';
 export type PersonRow = { id: string; display_name: string; active: number };
 export const personFromRow = (row: PersonRow) => ({
   id: row.id,
@@ -22,6 +23,7 @@ export type PlaceRow = {
   longitude: number | null;
   website_url: string | null;
   description: string | null;
+  facts: string;
   notes: string | null;
   operator: string | null;
   meeting_point: string | null;
@@ -51,6 +53,7 @@ export function placeFromRow(row: PlaceRow): Place {
     longitude: row.longitude,
     websiteUrl: row.website_url,
     description: row.description,
+    facts: placeFactsSchema.parse(JSON.parse(row.facts)),
     notes: row.notes,
     operator: row.operator,
     meetingPoint: row.meeting_point,

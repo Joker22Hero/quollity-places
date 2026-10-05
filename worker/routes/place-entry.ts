@@ -22,7 +22,9 @@ import {
   revisionGuard,
 } from '../mutations';
 import { sha256 } from '../../shared/agent-auth';
-import { lookupProvider } from '../geocoding';
+import { lookupProvider, enrichGeoapify } from '../geocoding';
+import { enrichWikidata } from '../wikimedia';
+import { resolveOverture } from '../overture';
 import {
   getPlace,
   placeFromRow,
@@ -43,11 +45,8 @@ import {
   probableMatches,
 } from '../place-entry';
 export const placeEntry = new Hono<AppEnv>();
-placeEntry.post('/place-lookups', async (c) => {
-  const input = await readJson(c.req.raw, lookupInputSchema),
-    db = c.env.DB,
-    now = Date.now();
-  const window = Math.floor(now / 60000);
+async function limitLookups(c: import('hono').Context<AppEnv>) {
+ const db=c.env.DB, window=Math.floor(Date.now()/60000);
   const rate = await db
     .prepare(
       'INSERT INTO place_lookup_limits(principal,window,count) VALUES(?,?,1) ON CONFLICT(principal,window) DO UPDATE SET count=count+1 RETURNING count',
@@ -63,12 +62,23 @@ placeEntry.post('/place-lookups', async (c) => {
       429,
       { 'Retry-After': '60' },
     );
+  return null;
+}
+
+placeEntry.post('/place-lookups', async (c) => {
+  const input = await readJson(c.req.raw, lookupInputSchema),
+    db = c.env.DB,
+    now = Date.now();
+  const limited = await limitLookups(c);
+  if(limited) return limited;
+  const window = Math.floor(now / 60000);
   await db.batch([
     db
       .prepare('DELETE FROM place_lookup_limits WHERE window<?')
       .bind(window - 2),
     db.prepare('DELETE FROM place_lookups WHERE expires_at<=?').bind(now),
     db.prepare('DELETE FROM place_lookup_cache WHERE expires_at<=?').bind(now),
+    db.prepare('DELETE FROM place_enrichment_cache WHERE expires_at<=?').bind(now),
     db.prepare('DELETE FROM duplicate_reviews WHERE expires_at<=?').bind(now),
     db.prepare('DELETE FROM api_idempotency WHERE expires_at<=?').bind(now),
   ]);
@@ -151,6 +161,39 @@ placeEntry.post('/place-lookups', async (c) => {
         ]
       : [],
   });
+});
+placeEntry.post('/places/resolve', async (c) => {
+  const selection=await readJson(c.req.raw,selectionSchema);
+  const original=await selectedCandidate(c,selection);
+  const limited=await limitLookups(c); if(limited) return limited;
+  const now=Date.now();
+  // New immutable snapshot: resolving never changes an earlier save intent.
+  const cacheKey=await sha256('enrichment-v1:'+canonical(original));
+  const cached=await c.env.DB.prepare('SELECT candidate FROM place_enrichment_cache WHERE cache_key=? AND expires_at>?').bind(cacheKey,now).first<{candidate:string}>();
+  let candidate=original;
+  const warnings:string[]=[];
+  if(cached) candidate=candidateSchema.parse(JSON.parse(cached.candidate));
+  else {
+    const signal=AbortSignal.timeout(6000);
+    let unavailable=false;
+    if(c.env.GEOAPIFY_API_KEY) {
+      try { candidate=await enrichGeoapify(candidate,c.env.GEOAPIFY_API_KEY,signal); }
+      catch { unavailable=true; }
+    }
+    candidate=resolveOverture(candidate);
+    if(candidate.externalIds.some(ref=>ref.provider==='wikidata')) {
+      try { candidate=await enrichWikidata(candidate,signal); }
+      catch { unavailable=true; }
+    }
+    candidate=candidateSchema.parse({...candidate,enrichment:{status:unavailable?'unavailable':candidate.externalIds.length?'enriched':'no_match',checkedAt:new Date(now).toISOString()}});
+    await c.env.DB.prepare('INSERT INTO place_enrichment_cache(cache_key,candidate,expires_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET candidate=excluded.candidate,expires_at=excluded.expires_at').bind(cacheKey,JSON.stringify(candidate),now+(unavailable?300000:86400000)).run();
+  }
+  if(candidate.enrichment.status==='unavailable') warnings.push('Some external details are unavailable. You can still review and create this place.');
+  const exact=candidate.kind==='place'?await exactMatch(c.env.DB,candidate):null;
+  const probable=await probableMatches(c.env.DB,inputFromCandidate(candidate));
+  const lookupId=crypto.randomUUID(),expires=now+1800000;
+  await c.env.DB.prepare('INSERT INTO place_lookups(id,principal,candidates,expires_at) VALUES(?,?,?,?)').bind(lookupId,principal(c),JSON.stringify([candidate]),expires).run();
+  return c.json({lookupId,expiresAt:new Date(expires).toISOString(),savedMatches:[],candidates:[{...candidate,duplicates:[...(exact?[{place:exact,reason:'source_identity'}]:[]),...probable.filter(p=>p.id!==exact?.id).map(place=>({place,reason:'name_location'}))]}],resolution:'candidates',warnings});
 });
 placeEntry.post('/places/import', async (c) => {
   const input = await readJson(c.req.raw, importInputSchema),
@@ -238,7 +281,7 @@ placeEntry.post('/places/:id/location-preview', async (c) => {
   const detail = await locationDetail(c.env.DB, place.id);
   const protectedField = (field: (typeof locationFields)[number]) =>
     detail.provenance.some((p) => p.field === field && p.overridden) ||
-    (place[field] !== null &&
+    (place[field] !== null && (field !== 'facts' || Object.values(place.facts).some(v=>v!==null && (!Array.isArray(v) || v.length))) &&
       !detail.provenance.some((p) => p.field === field));
   return c.json({
     revision: place.revision,
@@ -246,8 +289,8 @@ placeEntry.post('/places/:id/location-preview', async (c) => {
     changes: locationFields
       .filter(
         (field) =>
-          candidate[field] !== null &&
-          (candidate[field] !== place[field] ||
+          candidate[field] !== null && (field !== 'facts' || Object.values(candidate.facts).some(v=>v!==null && (!Array.isArray(v) || v.length))) &&
+          (canonical(candidate[field]) !== canonical(place[field]) ||
             ((field === 'latitude' || field === 'longitude') &&
               (candidate.latitude !== place.latitude ||
                 candidate.longitude !== place.longitude))),
@@ -325,6 +368,9 @@ placeEntry.patch('/places/:id/location', async (c) => {
     latitude: 'latitude',
     longitude: 'longitude',
     websiteUrl: 'website_url',
+    name:'name',
+    description:'description',
+    facts:'facts',
   };
   // Location repair records location evidence; it cannot silently change attraction identity.
   try {
@@ -332,7 +378,7 @@ placeEntry.patch('/places/:id/location', async (c) => {
       guard.start,
       c.env.DB.prepare(
         `UPDATE places SET ${input.fields.map((f) => `${sqlFields[f]}=?`).join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-      ).bind(...input.fields.map((f) => proposed[f]), id),
+      ).bind(...input.fields.map((f) => f==='facts'?JSON.stringify(proposed.facts):proposed[f]), id),
       ...sourceStatements(
         c.env.DB,
         id,

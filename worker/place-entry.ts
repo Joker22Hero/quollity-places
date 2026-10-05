@@ -27,6 +27,7 @@ export const columns = [
   'longitude',
   'website_url',
   'description',
+  'facts',
   'notes',
   'operator',
   'meeting_point',
@@ -46,6 +47,7 @@ export function placeValues(input: PlaceInput) {
     input.longitude,
     input.websiteUrl,
     input.description,
+    JSON.stringify(input.facts),
     input.notes,
     input.operator,
     input.meetingPoint,
@@ -63,18 +65,16 @@ export async function exactMatch(
   db: D1Database,
   candidate: Candidate,
 ): Promise<Place | null> {
-  const row = await db
-    .prepare(
-      `SELECT p.* FROM place_summaries p JOIN place_sources s ON s.place_id=p.id WHERE s.purpose='identity' AND ((s.provider=? AND s.provider_id=?) OR (s.osm_type IS NOT NULL AND s.osm_type=? AND s.osm_id=?)) LIMIT 1`,
-    )
-    .bind(
-      candidate.source.provider,
-      candidate.source.providerId,
-      candidate.source.osmType,
-      candidate.source.osmId,
-    )
-    .first<PlaceRow>();
-  return row ? placeFromRow(row) : null;
+  const identities = [
+    {provider:candidate.source.provider, id:candidate.source.providerId},
+    ...candidate.externalIds,
+  ];
+  const terms = identities.map(() => '(s.provider=? AND s.provider_id=?)');
+  const rows = await db.prepare(
+    `SELECT DISTINCT p.* FROM place_summaries p JOIN place_sources s ON s.place_id=p.id WHERE s.purpose='identity' AND (${terms.join(' OR ')} OR (s.osm_type IS NOT NULL AND s.osm_type=? AND s.osm_id=?)) LIMIT 2`,
+  ).bind(...identities.flatMap(ref=>[ref.provider,ref.id]), candidate.source.osmType, candidate.source.osmId).all<PlaceRow>();
+  if(rows.results.length>1) problem(409,'conflicting_sources','These external identities belong to different saved places. Review them before importing.');
+  return rows.results[0] ? placeFromRow(rows.results[0]) : null;
 }
 export const normaliseName = (name: string) =>
   name
@@ -117,11 +117,11 @@ export async function probableMatches(
     .filter(
       (p) =>
         p.id !== exclude &&
-        normaliseName(p.name) === normaliseName(input.name) &&
-        (nearby(input, p) ||
-          !input.city ||
-          !p.city ||
-          normaliseName(input.city) === normaliseName(p.city)),
+        [p.name, p.facts.localName, ...p.facts.alternateNames].filter(Boolean).some(name => normaliseName(name!) === normaliseName(input.name)) &&
+        (input.latitude !== null && input.longitude !== null && p.latitude !== null && p.longitude !== null
+          ? nearby(input, p)
+          : (!input.city || !p.city || normaliseName(input.city) === normaliseName(p.city)) &&
+            (!input.facts.streetAddress || !p.facts.streetAddress || normaliseName(input.facts.streetAddress) === normaliseName(p.facts.streetAddress))),
     )
     .slice(0, 8);
 }
@@ -196,7 +196,7 @@ export function inputFromCandidate(
     name: candidate.name,
     placeTypeId: candidate.suggestedTypeId,
     ...Object.fromEntries(locationFields.map((k) => [k, candidate[k]])),
-    ...overrides,
+    ...Object.fromEntries(Object.entries(overrides).filter(([,value])=>value !== undefined)),
   });
   if (!result.success)
     problem(
@@ -235,6 +235,9 @@ export function sourceStatements(
         candidate.source.fetchedAt,
         JSON.stringify(candidate.source.attribution),
       ),
+    ...candidate.externalIds.map((ref) => db.prepare(
+      'INSERT INTO place_sources(id,place_id,provider,provider_id,purpose,snapshot,fetched_at,attribution,confidence) VALUES(?,?,?,?,?,?,?,?,?)',
+    ).bind(crypto.randomUUID(),placeId,ref.provider,ref.id,purpose,JSON.stringify(candidate),candidate.enrichment.checkedAt ?? candidate.source.fetchedAt,JSON.stringify(candidate.source.attribution),ref.confidence)),
     ...fields.map((field) =>
       db
         .prepare(
@@ -245,7 +248,7 @@ export function sourceStatements(
           field,
           sourceId,
           JSON.stringify(candidate[field]),
-          input[field] === candidate[field] ? 0 : 1,
+          canonical(input[field]) === canonical(candidate[field]) ? 0 : 1,
         ),
     ),
   ];
@@ -288,7 +291,7 @@ export function manualOverrideStatements(
   input: PlaceInput,
 ) {
   return locationFields
-    .filter((field) => current[field] !== input[field])
+    .filter((field) => canonical(current[field]) !== canonical(input[field]))
     .map((field) =>
       db
         .prepare(

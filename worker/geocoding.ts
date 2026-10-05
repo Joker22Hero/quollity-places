@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { suggestedType } from './place-taxonomy';
+import { httpUrlSchema, placeFactsSchema } from '../shared/place-facts';
 import {
   candidateSchema,
   lookupInputSchema,
@@ -37,39 +39,7 @@ const propertiesSchema = z
       .optional(),
   })
   .passthrough();
-export function suggestedType(
-  categories: string[],
-  raw: Record<string, unknown>,
-) {
-  const values = [
-    ...categories,
-    ...['tourism', 'leisure', 'historic', 'building'].map((k) =>
-      String(raw[k] ?? ''),
-    ),
-  ];
-  const matches = new Set<string>();
-  const mappings: [RegExp, string][] = [
-    [/botanical|botanic/, 'botanic-garden'],
-    [/museum/, 'museum'],
-    [/gallery/, 'art-gallery'],
-    [/cathedral|church/, 'church'],
-    [/temple|shrine/, 'temple'],
-    [/castle|palace/, 'castle'],
-    [/manor|historic_house/, 'historic-house'],
-    [/archaeological/, 'archaeological-site'],
-    [/memorial|monument/, 'monument'],
-    [/viewpoint/, 'scenic-attraction'],
-    [/aquarium/, 'aquarium'],
-    [/theme_park/, 'theme-park'],
-  ];
-  for (const [pattern, type] of mappings)
-    if (values.some((v) => pattern.test(v))) matches.add(type);
-  if (matches.size === 1) return [...matches][0];
-  if (matches.size > 1) return 'other';
-  return values.some((v) => /(^|\.)park$|(^|\.)garden$/.test(v))
-    ? 'park-garden'
-    : 'other';
-}
+export { suggestedType } from './place-taxonomy';
 export function normaliseCandidate(value: unknown): Candidate | null {
   const parsed = propertiesSchema.safeParse(value);
   if (!parsed.success) return null;
@@ -124,6 +94,16 @@ export function normaliseCandidate(value: unknown): Candidate | null {
     latitude: kind === 'locality' ? null : hasCoords ? p.lat : null,
     longitude: kind === 'locality' ? null : hasCoords ? p.lon : null,
     websiteUrl: validWebsite,
+    facts: placeFactsSchema.parse({
+      localName: typeof raw['name:local'] === 'string' ? raw['name:local'].slice(0,200) : null,
+      alternateNames: typeof raw.alt_name === 'string' ? raw.alt_name.split(';').map(s=>s.trim().slice(0,200)).filter(Boolean).slice(0,30) : [],
+      streetAddress: typeof p.address_line2 === 'string' ? p.address_line2.slice(0,500) : typeof raw['addr:street'] === 'string' ? [raw['addr:housenumber'], raw['addr:street']].filter(Boolean).join(' ').slice(0,500) : null,
+      postcode: typeof p.postcode === 'string' ? p.postcode.slice(0,40) : null,
+      phone: typeof raw.phone === 'string' ? raw.phone.slice(0,100) : null,
+      socialLinks: ['facebook','instagram','twitter'].flatMap(k => typeof raw[k] === 'string' && httpUrlSchema.safeParse(raw[k]).success ? [raw[k]] : []),
+    }),
+    externalIds: typeof raw.wikidata === 'string' && /^Q[1-9]\d*$/.test(raw.wikidata)
+      ? [{provider:'wikidata', id:raw.wikidata, url:`https://www.wikidata.org/wiki/${raw.wikidata}`, confidence:1}] : [],
     suggestedTypeId: suggestedType(p.categories ?? [], raw),
     precision:
       kind === 'locality'
@@ -249,55 +229,26 @@ export async function lookupProvider(
         candidate.countryCode === input.context.countryCode,
     )
     .slice(0, input.limit);
-  // Bounded enrichment for a few likely attractions; missing details do not block.
-  for (const candidate of unique
-    .filter((c) => c.kind === 'place')
-    .slice(0, 3)) {
-    const details = new URL('https://api.geoapify.com/v2/place-details');
-    details.searchParams.set('id', candidate.source.providerId);
-    details.searchParams.set('features', 'details');
-    try {
-      const result = propertiesFromResponse(
-        await providerJson(details, key, signal),
-      );
-      const detail = result.find((v) => v && typeof v === 'object') as
-        Record<string, unknown> | undefined;
-      const original = raw.find(
-        (v) =>
-          v &&
-          typeof v === 'object' &&
-          (v as Record<string, unknown>).place_id === candidate.candidateId,
-      );
-      const enriched =
-        detail &&
-        normaliseCandidate({
-          ...propertiesSchema.safeParse(original).data,
-          ...candidateToProperties(candidate),
-          ...detail,
-          place_id: candidate.source.providerId,
-        });
-      if (enriched)
-        Object.assign(candidate, enriched, {
-          suggestedTypeId:
-            enriched.suggestedTypeId === 'other'
-              ? candidate.suggestedTypeId
-              : enriched.suggestedTypeId,
-        });
-    } catch {
-      /* retain the selected identity even when details are unavailable */
-    }
-  }
   return unique;
 }
-function candidateToProperties(c: Candidate) {
-  return {
-    name: c.name,
-    city: c.city ?? undefined,
-    state: c.region ?? undefined,
-    country_code: c.countryCode ?? undefined,
-    lat: c.latitude ?? undefined,
-    lon: c.longitude ?? undefined,
-    website: c.websiteUrl ?? undefined,
-    datasource: { raw: { osm_type: c.source.osmType, osm_id: c.source.osmId } },
+export async function enrichGeoapify(candidate: Candidate, key: string, signal: AbortSignal): Promise<Candidate> {
+  if(candidate.kind !== 'place') return candidate;
+  const details = new URL('https://api.geoapify.com/v2/place-details');
+  details.searchParams.set('id',candidate.source.providerId);
+  details.searchParams.set('features','details');
+  const result = propertiesFromResponse(await providerJson(details,key,signal));
+  const detail = result.find(v=>v && typeof v==='object') as Record<string,unknown> | undefined;
+  if(!detail) return candidate;
+  const enriched = normaliseCandidate({ ...candidateToProperties(candidate), ...detail, place_id:candidate.source.providerId });
+  if(!enriched) return candidate;
+  return { ...enriched,
+    facts: { ...candidate.facts, ...Object.fromEntries(Object.entries(enriched.facts).filter(([,v])=> v !== null && (!Array.isArray(v) || v.length))) },
+    externalIds: [...new Map([...candidate.externalIds,...enriched.externalIds].map(ref=>[ref.provider+':'+ref.id,ref])).values()],
+    suggestedTypeId: enriched.suggestedTypeId==='other' ? candidate.suggestedTypeId : enriched.suggestedTypeId,
+    source:{ ...enriched.source, osmType:enriched.source.osmType ?? candidate.source.osmType, osmId:enriched.source.osmId ?? candidate.source.osmId },
   };
+}
+function candidateToProperties(c:Candidate) {
+ return {name:c.name,city:c.city ?? undefined,state:c.region ?? undefined,country_code:c.countryCode ?? undefined,lat:c.latitude ?? undefined,lon:c.longitude ?? undefined,website:c.websiteUrl ?? undefined,
+ datasource:{raw:{osm_type:c.source.osmType,osm_id:c.source.osmId,wikidata:c.externalIds.find(ref=>ref.provider==='wikidata')?.id}}};
 }

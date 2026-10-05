@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { placeFactsSchema } from '../shared/place-facts';
 import type { Place } from '../shared/contracts';
 import { ApiError, post, put, schemas } from './api';
 import {
@@ -42,8 +43,12 @@ function PlaceEditor({
     matches: Place[];
     duplicateReviewToken: string;
   } | null>(null);
+  const [existing,setExisting]=useState<string|null>(null);
   const [approved, setApproved] = useState(false);
   return (
+    <>
+    {!place && <h3>Review place</h3>}
+    {candidate?.enrichment.status==='unavailable' && <p role="status">Some external details are unavailable. You can still create this place.</p>}
     <MutationForm
       label={place ? 'Save place' : 'Create place'}
       onCancel={onDone}
@@ -61,6 +66,14 @@ function PlaceEditor({
           longitude: nullableNumber(data, 'longitude'),
           websiteUrl: nullableText(data, 'website'),
           description: nullableText(data, 'description'),
+          facts:placeFactsSchema.parse({
+            ...(place?.facts ?? candidate?.facts),
+            localName:nullableText(data,'localName'),
+            alternateNames:text(data,'alternateNames').split(';').map(v=>v.trim()).filter(Boolean),
+            streetAddress:nullableText(data,'streetAddress'),postcode:nullableText(data,'postcode'),phone:nullableText(data,'phone'),
+            socialLinks:text(data,'socialLinks').split(/\n/).map(v=>v.trim()).filter(Boolean),
+            operatingStatus:nullableText(data,'operatingStatus'),
+          }),
           notes: nullableText(data, 'notes'),
           operator:
             kind === 'experience' ? nullableText(data, 'operator') : null,
@@ -86,7 +99,7 @@ function PlaceEditor({
               operator: input.operator,
               meetingPoint: input.meetingPoint,
               durationMinutes: input.durationMinutes,
-              duplicateAction: 'reuse_exact',
+              duplicateAction: 'reject',
               duplicateReviewToken,
               overrides: {
                 name: input.name,
@@ -96,6 +109,7 @@ function PlaceEditor({
                 latitude: input.latitude,
                 longitude: input.longitude,
                 websiteUrl: input.websiteUrl,
+                facts:input.facts,
               },
             }
           : { ...input, duplicateReviewToken };
@@ -116,6 +130,10 @@ function PlaceEditor({
                   saveKey(payload),
                 );
         } catch (error) {
+          if(error instanceof ApiError && (error.code==='place_exists' || error.code==='place_archived')) {
+            const details=z.object({placeId:z.uuid()}).safeParse(error.details);
+            if(details.success) { setExisting(details.data.placeId); }
+          }
           if (
             error instanceof ApiError &&
             error.code === 'possible_duplicate'
@@ -150,6 +168,7 @@ function PlaceEditor({
           <Attribution candidate={candidate} />
         </div>
       )}
+      {existing && <p role="alert">This source is already saved. Your review edits have not been applied. <Link to={`/place/${existing}`}>Open the existing place</Link>.</p>}
       {review && (
         <div role="alert" className="duplicate-review">
           <p>Similar places are already saved:</p>
@@ -173,6 +192,7 @@ function PlaceEditor({
           </label>
         </div>
       )}
+      {candidate && <p className="muted">Review the factual details below. Visit dates, ratings and your photos can be added after creation.</p>}
       <div className="form-grid">
         <label className="span-2">
           Name
@@ -229,6 +249,13 @@ function PlaceEditor({
         <details className="span-2" open={place ? true : undefined}>
           <summary>Edit details</summary>
           <div className="form-grid">
+            <label>Local / original name<input name="localName" maxLength={200} defaultValue={place?.facts.localName ?? candidate?.facts.localName ?? ''} /></label>
+            <label>Alternate names (separate with semicolons)<input name="alternateNames" defaultValue={(place?.facts.alternateNames ?? candidate?.facts.alternateNames ?? []).join('; ')} /></label>
+            <label className="span-2">Street address<input name="streetAddress" maxLength={500} defaultValue={place?.facts.streetAddress ?? candidate?.facts.streetAddress ?? ''} /></label>
+            <label>Postcode<input name="postcode" maxLength={40} defaultValue={place?.facts.postcode ?? candidate?.facts.postcode ?? ''} /></label>
+            <label>Phone<input name="phone" maxLength={100} defaultValue={place?.facts.phone ?? candidate?.facts.phone ?? ''} /></label>
+            <label>Operating status<select name="operatingStatus" defaultValue={place?.facts.operatingStatus ?? candidate?.facts.operatingStatus ?? ''}><option value="">Not recorded</option><option value="open">Open</option><option value="temporarily_closed">Temporarily closed</option><option value="permanently_closed">Permanently closed</option></select></label>
+            <label className="span-2">Social links (one URL per line)<textarea name="socialLinks" rows={2} defaultValue={(place?.facts.socialLinks ?? candidate?.facts.socialLinks ?? []).join('\n')} /></label>
             <label>
               Short name
               <input
@@ -324,13 +351,14 @@ function PlaceEditor({
                 name="description"
                 rows={3}
                 maxLength={10000}
-                defaultValue={place?.description ?? ''}
+                defaultValue={place?.description ?? candidate?.description ?? ''}
               />
             </label>
           </div>
         </details>
       </div>
     </MutationForm>
+    </>
   );
 }
 

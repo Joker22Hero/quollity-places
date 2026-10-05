@@ -159,6 +159,7 @@ export const openapi = {
         lookupResponseSchema,
       ),
     },
+    '/api/places/resolve': {post: operation('Optionally enrich a selected place; return a new review snapshot', 'places:lookup', selectionSchema, lookupResponseSchema)},
     '/api/places/import': {
       post: operation(
         'Import a selected candidate',
