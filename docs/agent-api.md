@@ -9,8 +9,14 @@ Configure a Geoapify account and `GEOAPIFY_API_KEY` on the Places Worker. Locall
 For production, use the secure Wrangler prompt from this repository:
 
 ```sh
-./node_modules/.bin/wrangler secret put GEOAPIFY_API_KEY --env production
+./node_modules/.bin/wrangler secret put GEOAPIFY_API_KEY --config wrangler.jsonc --env production
 ```
+
+Run this from the Places repository. Its production environment explicitly targets
+`quollity-places`. The gateway repository has no `production` environment; configure
+its secrets there without `--env production`. If Wrangler reports that the production
+environment is missing, check the working directory and configuration path before
+creating another Worker.
 
 The server uses Geoapify forward geocoding, a named POI fallback where geographic context is available, and bounded place-detail enrichment. Search results are cached for 24 hours and selections last 30 minutes. Keys stay server-side. Country context is a hard filter; proximity is a ranking bias. Results labelled as cities/areas cannot be imported as physical attractions; tours may use them as approximate location context, without a fabricated attraction coordinate.
 

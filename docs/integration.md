@@ -119,3 +119,28 @@ Published commit `5293198` as Places Worker version
 the existing D1/Trips bindings. A minimal anonymous live `/places/` request
 returned the expected 302 access redirect. Signed-in production rendering was
 not exercised; the layout and interactions above were verified locally.
+
+## Place lookup and agent API release — 5 October 2026
+
+Deployed the Places source at `c57bbc8` as private Worker version
+`93f6b1e4-ae59-4b39-9396-b1e62298b06b` and the Gateway source at `cbb8f9e`
+as version `6a41506c-ac28-4ef6-99ff-77b79c21b414`. Installing the approved
+`PLACES_AGENT_TOKENS` secret then deployed Gateway version
+`f0ac7930-7894-437d-848d-32d782bbc6af` at 100% traffic. Existing variables,
+secrets, assets and service bindings were retained. Places remains private.
+
+Applied `0003_place_entry.sql` to production D1; no migrations remain pending.
+The owner configured `GEOAPIFY_API_KEY`, and its presence was verified without
+reading its value. Created one owner-delegated agent token with `places:read`,
+`places:lookup` and `places:create`, expiring at `2027-01-03T20:28:26Z`.
+Its credential and hashed registry are stored outside Git under
+`/Users/mhinz/.config/quollity/`, with owner-only file permissions. No credential
+value was printed or committed.
+
+Before release, 56 Places tests, 50 Gateway tests, type checking, production
+build and both deployment dry runs passed. Live authenticated checks verified
+the OpenAPI document (11 paths), session access and Geoapify Kew lookup (two
+place candidates, automatic geography, no warnings). An empty import reached
+validation and returned 400. Unscoped replacement edits and cross-product
+agent requests returned 403; invalid tokens and anonymous API requests returned 401. Verification created no place or visit. Browser/editor login and successful
+production place creation were not exercised in this release.
