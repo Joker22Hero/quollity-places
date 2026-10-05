@@ -67,3 +67,21 @@ No photo upload or storage is implemented in Places. Before exposing a Snaps pic
 The managed sandbox blocked package downloads and binding local server ports. Tests/builds used an isolated copy of the existing Zoos dependency set; `pnpm-lock.yaml` locks the matching dependency graph. A clean install, live browser preview, local Wrangler D1 migration, and runtime type generation remain to be verified outside that restriction.
 
 `worker-configuration.d.ts` contains generated binding types. `worker/runtime.d.ts` is a temporary, licensed runtime-type snapshot from Zoos generated with the same installed Wrangler/workerd versions. `pnpm cf:typegen` regenerates the full types and removes that snapshot after successful runtime generation.
+
+## Places identity and account pass — 5 October 2026 (not deployed)
+
+Applied the family museum-terracotta/cream palette, shared green anchor,
+responsive two-row navigation, accessible hover/focus and reduced motion.
+Viewer/editor header status, the read-only creation boundary and load-error
+recovery point to the Gateway `/#account` menu. Existing API authorization,
+place/visit data, lookup and scoped-agent contracts are unchanged.
+
+Local verification: 56 tests (API, rendering, place entry and palette contrast),
+TypeScript, production build and deployment dry-run. Frontend browser fixtures
+verified 1440/820/390/320px layouts, viewer/editor account links, creation boundary,
+creation entry, place details, keyboard navigation, hover/reduced motion and
+loading/error states. The installed local Worker emulator cannot run the
+existing October compatibility date; browser checks used a frontend-only Vite
+preview with mocked APIs. No live identity login or production reads/writes were
+performed. Release this alongside the Gateway shared-account commit `d09a67a`;
+production deployment remains a separate action.

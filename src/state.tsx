@@ -66,9 +66,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         <p className="eyebrow">Quollity Places</p>
         <h1>Unable to open Places</h1>
         <p role="alert">{error}</p>
-        <button onClick={() => setRevision((value) => value + 1)}>
-          Try again
-        </button>
+        <div className="actions">
+          <button onClick={() => setRevision((value) => value + 1)}>
+            Try again
+          </button>
+          <a className="button secondary" href="/#account">
+            Open Quollity account
+          </a>
+        </div>
       </main>
     );
   if (!data)

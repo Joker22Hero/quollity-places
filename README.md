@@ -52,6 +52,20 @@ Use **Places** in the UI. It accommodates museums and gardens as naturally as ch
 
 Zoos remain a separate component because they have deeper domain requirements: taxa, holdings, sightings, enclosure rankings, collection metrics, and ZTL integration. A trip can present zoo visits and place visits in the same travel history, with each opening its appropriate interface.
 
+## Visual identity and shared account
+
+Places uses museum terracotta `#82483e`, cream `#f3e5d5` and oxblood `#65382f`,
+with Quollity paper `#f3efe4` and the shared green `#173f35` anchor. Tokens live
+in `src/design.css`; Georgia titles, quiet sans-serif controls and an 1180px
+archive frame follow the family guide in `../quollity-gateway/docs/design-language.md`.
+Product navigation, heading/action accents and architectural card panels make
+Places distinct from Zoos and Trips. No new mascot or logo is introduced.
+
+The header shows viewer/editor status and links to `/#account`. Editor sign-in
+and sign-out belong to the Gateway; its root-scoped session is shared by all
+products. Read-only creation boundaries and initial-load recovery also offer
+that same account link. Places continues to enforce permissions server-side.
+
 ## Design principles
 
 - Separate a place from each visit to it. Revisit the same record without duplicating its identity, general notes, or photos.

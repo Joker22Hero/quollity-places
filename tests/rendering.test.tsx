@@ -6,6 +6,7 @@ import { Directory } from '../src/Directory';
 import { PlacePage } from '../src/PlacePage';
 import { BoardPage } from '../src/BoardPage';
 import { PlaceForm } from '../src/PlaceForm';
+import { Shell } from '../src/App';
 
 const state = vi.hoisted(() => ({
   references: {} as Record<string, unknown>,
@@ -105,6 +106,34 @@ beforeEach(() => {
 });
 
 describe('React page rendering', () => {
+  it('routes viewer account and editor boundaries to the shared Gateway menu', () => {
+    state.references.session = { role: 'viewer', person: null, readOnly: true };
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={['/new']}>
+        <Shell />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('aria-label="Read-only · Quollity account"');
+    expect(html.match(/href="\/#account"/g)).toHaveLength(2);
+    expect(html).toContain('Open Quollity account');
+    expect(html).toContain('Editor access required');
+    expect(html).not.toContain('Place name and location');
+    expect(html).not.toContain('href="/editor"');
+    expect(html).toContain('href="#places-content"');
+  });
+  it('shows editor identity in the shared account link and retains creation controls', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <Shell />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Signed in as Michael · Quollity account');
+    expect(html).toContain('Michael · Editor');
+    expect(html).toContain('href="/#account"');
+    expect(html).toContain('Add place');
+    expect(html).toContain('aria-label="Places navigation"');
+  });
+
   it('starts new-place entry with search and an accessible manual fallback', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>

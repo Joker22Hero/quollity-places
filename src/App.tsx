@@ -6,35 +6,67 @@ import { Rankings } from './Rankings';
 import { BoardPage } from './BoardPage';
 import { People } from './People';
 import { DataProvider, useReferenceData } from './state';
-function Shell() {
+export function Shell() {
   const { session } = useReferenceData();
   return (
     <>
-      <nav className="main-nav" aria-label="Main navigation">
-        <a className="brand" href="/">
-          Quollity
-        </a>
-        <a className="sibling" href="/zoos/">
-          Zoos
-        </a>
-        <a className="sibling" href="/trips/">
-          Trips
-        </a>
-        <span className="nav-spacer" />
-        <NavLink to="/" end>
-          Places
-        </NavLink>
-        <NavLink to="/rankings">Rankings</NavLink>
-        <NavLink to="/people">People</NavLink>
-      </nav>
-      <main>
+      <a className="skip-link" href="#places-content">
+        Skip to Places
+      </a>
+      <header className="places-header">
+        <nav className="main-nav" aria-label="Quollity navigation">
+          <a className="brand" href="/">
+            Quollity
+          </a>
+          <a className="sibling" href="/zoos/">
+            Zoos
+          </a>
+          <a className="sibling" href="/trips/">
+            Trips
+          </a>
+          <span className="nav-spacer" />
+          <a
+            className="account-link"
+            href="/#account"
+            aria-label={
+              session.readOnly
+                ? 'Read-only · Quollity account'
+                : `Signed in as ${session.person?.displayName ?? 'editor'} · Quollity account`
+            }
+          >
+            <span>
+              {session.readOnly
+                ? 'Read-only'
+                : `${session.person?.displayName ?? 'Editor'} · Editor`}
+            </span>
+            <span className="account-link-label">
+              Account <span aria-hidden="true">↗</span>
+            </span>
+          </a>
+        </nav>
+        <nav className="product-nav" aria-label="Places navigation">
+          <NavLink to="/" end>
+            Places
+          </NavLink>
+          <NavLink to="/rankings">Rankings</NavLink>
+          <NavLink to="/people">People</NavLink>
+        </nav>
+      </header>
+      <main id="places-content" tabIndex={-1}>
         <Routes>
           <Route path="/" element={<Directory />} />
           <Route
             path="/new"
             element={
               session.readOnly ? (
-                <p>An editor account is required to create places.</p>
+                <div className="narrow editor-boundary">
+                  <p className="eyebrow">Shared archive · Read-only</p>
+                  <h1>Editor access required</h1>
+                  <p>An editor account is required to create places.</p>
+                  <a className="button" href="/#account">
+                    Open Quollity account
+                  </a>
+                </div>
               ) : (
                 <>
                   <Link className="back" to="/">

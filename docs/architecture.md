@@ -87,3 +87,21 @@ JSON requests are bounded to 128 KiB and catalogue responses to 1 MiB. Attendee 
 API integration tests execute both migrations in Node's in-memory SQLite and run the Hono app against a D1-shaped adapter. Its batch adapter uses real SQLite transactions. Tests cover repeat visits, averages, archival recovery, filters, ranking ties/order, constrained metadata, people, Snaps references, trip-ID validation, and the gateway boundary.
 
 These tests do not replace live Cloudflare runtime or browser checks. Type checking, Vite client/Worker builds, and the production Wrangler dry run validate the packaging. A live preview and local D1 migration remain to be run in an environment that permits opening local ports.
+
+## Visual shell and shared account
+
+`src/design.css` owns local palette roles: museum terracotta, warm cream and
+oxblood, anchored by shared Quollity green/paper. The two-row shell separates
+family links/account status from Places/Rankings/People navigation. The latter
+uses terracotta with cream labels and an explicit active underline. Main content
+uses an 1180px frame, 32px desktop/16px phone gutters, Georgia editorial titles
+and system/Inter sans controls. Existing specialised forms, lists and cards
+retain their structure. Cards use restrained architectural panels, clear focus,
+small hover lift and a reduced-motion override; no character artwork is invented.
+
+Viewer/editor status comes from the existing Places session. The account link
+and read-only creation boundary point to `/#account`, opening the Gateway menu.
+The Gateway owns `/editor`, Cloudflare Access validation and root-scoped session
+cookies. Places owns actor resolution and write authorization; there is no
+second editor login or new identity datastore here. Initial reference-load
+errors retain retry and provide a Gateway account recovery link.
