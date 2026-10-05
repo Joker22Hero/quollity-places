@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { locationDetailSchema } from '../shared/place-entry';
 import {
   boardDetailSchema,
   boardSchema,
@@ -10,6 +11,15 @@ import {
   typeSchema,
   visitSchema,
 } from '../shared/contracts';
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public code?: string,
+    public details?: unknown,
+  ) {
+    super(message);
+  }
+}
 const base = import.meta.env.BASE_URL;
 export const apiPath = (path: string) => `${base}api${path}`;
 export async function request<T>(
@@ -25,11 +35,20 @@ export async function request<T>(
     },
   });
   const raw: unknown = await response.json();
-  if (!response.ok)
-    throw new Error(
-      z.object({ error: z.string() }).safeParse(raw).data?.error ??
-        'The request failed.',
+  if (!response.ok) {
+    const parsed = z
+      .object({
+        error: z.string(),
+        code: z.string().optional(),
+        details: z.unknown().optional(),
+      })
+      .safeParse(raw).data;
+    throw new ApiError(
+      parsed?.error ?? 'The request failed.',
+      parsed?.code,
+      parsed?.details,
     );
+  }
   return schema.parse(raw);
 }
 export const schemas = {
@@ -48,7 +67,9 @@ export const schemas = {
     limit: z.number(),
     offset: z.number(),
   }),
-  place: placeDetailSchema,
+  place: placeDetailSchema.extend({
+    location: locationDetailSchema.optional(),
+  }),
   boards: z.object({ boards: z.array(boardSchema) }),
   board: boardDetailSchema,
   rankings: z.object({
@@ -62,5 +83,14 @@ export const schemas = {
 };
 export const put = <T>(path: string, body: unknown, schema: z.ZodType<T>) =>
   request(path, schema, { method: 'PUT', body: JSON.stringify(body) });
-export const post = <T>(path: string, body: unknown, schema: z.ZodType<T>) =>
-  request(path, schema, { method: 'POST', body: JSON.stringify(body) });
+export const post = <T>(
+  path: string,
+  body: unknown,
+  schema: z.ZodType<T>,
+  idempotencyKey?: string,
+) =>
+  request(path, schema, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+  });

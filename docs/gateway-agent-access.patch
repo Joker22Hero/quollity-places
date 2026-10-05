@@ -1,0 +1,450 @@
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,10 +1,20 @@
+ import { Hono } from "hono";
++import { authenticateAgent, requiredAgentScope, boundedBytes, sha256, agentSignature } from "./places-agent-contract";
+ import { CSS, homeBody } from "./home";
+ import { createSession, expiredSessionCookie, getAuthContext, hasSessionCookie, internalSignature, refreshSessionCookie, resolveEditorIdentity, sessionCookie } from "./auth";
+
+-type Bindings = Env;
++type Bindings = Env & { PLACES_AGENT_TOKENS?: string };
+ type App = { Bindings: Bindings };
+ const app = new Hono<App>();
++function stripInternal(headers: Headers) {
++  const names: string[] = [];
++  headers.forEach((_value, name) => names.push(name));
++  for (const name of names) if (name.toLowerCase().startsWith("x-quollity-") || ["authorization","cookie","cf-access-jwt-assertion"].includes(name.toLowerCase())) headers.delete(name);
++}
++app.use("*", async (c, next) => {
++  if (c.req.header("Authorization") !== undefined && !new URL(c.req.url).pathname.startsWith("/places/api/")) return c.json({error:"Agent credentials only grant Places API access.",code:"insufficient_scope"},403);
++  await next();
++});
+ const loggedIn = (auth: Awaited<ReturnType<typeof getAuthContext>>) => auth.authenticated;
+ const page = (body: string, title = "Quollity") => new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${CSS}</style></head><body>${body}</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+
+@@ -67,6 +77,32 @@
+ app.all("/places/*", (c) => proxyChild(c, "places", c.env.PLACES));
+
+ async function proxyChild(c: any, child: "zoos" | "trips" | "places", binding?: Fetcher) {
++  const authorization = c.req.header("Authorization");
++  if (authorization !== undefined) {
++    if (child !== "places") return c.json({error:"This credential only grants Places API access.",code:"insufficient_scope"},403);
++    const claims = await authenticateAgent(authorization, c.env.PLACES_AGENT_TOKENS);
++    if (!claims) return c.json({error:"Invalid, expired, or revoked agent credential.",code:"invalid_token"},401);
++    const target = new URL(c.req.url); target.pathname = target.pathname.replace(/^\/places/, "") || "/";
++    const scope = requiredAgentScope(c.req.method, target.pathname);
++    if (!scope || !claims.scopes.includes(scope)) return c.json({error:"This token does not permit this operation.",code:"insufficient_scope"},403);
++    const allowed = (c.env.EDITOR_EMAILS ?? "").split(",").map((v:string)=>v.trim().toLowerCase());
++    if (!allowed.includes(claims.identity)) return c.json({error:"The delegating identity is not an allowed editor.",code:"inactive_owner"},403);
++    if (!binding || !c.env.QUOLLITY_INTERNAL_SECRET) return c.json({error:"Places agent integration is unavailable."},503);
++    let body;
++    try { body = await boundedBytes(c.req.raw); } catch { return c.json({error:"Request exceeds 128 KiB.",code:"request_too_large"},413); }
++    const headers = new Headers(c.req.raw.headers);
++    stripInternal(headers);
++    headers.set("X-Quollity-Identity",claims.identity);
++    headers.set("X-Quollity-Agent",JSON.stringify(claims));
++    const timestamp = String(Math.floor(Date.now()/1000));
++    headers.set("X-Quollity-Timestamp",timestamp);
++    const unsigned = new Request(target,{method:c.req.method,headers});
++    headers.set("X-Quollity-Signature",await agentSignature(c.env.QUOLLITY_INTERNAL_SECRET,unsigned,claims,timestamp,await sha256(body)));
++    const response = await binding.fetch(new Request(target,{method:c.req.method,headers,body:["GET","HEAD"].includes(c.req.method)?undefined:body}));
++    const responseHeaders = new Headers(response.headers); responseHeaders.set("Cache-Control","private, no-store");
++    return new Response(response.body,{status:response.status,statusText:response.statusText,headers:responseHeaders});
++  }
++
+   const auth = await getAuthContext(c.req.raw, c.env); if (!loggedIn(auth)) {
+     const requestUrl = new URL(c.req.url);
+     const response = requestUrl.pathname.includes("/api/")
+@@ -76,7 +112,7 @@
+     return response;
+   } if (!binding) return c.text(`${child} service binding is not configured for this gateway.`, 503);
+   const incoming = new URL(c.req.url); const target = new URL(incoming); target.pathname = incoming.pathname.replace(new RegExp(`^/${child}`), "") || "/";
+-  const headers = new Headers(c.req.raw.headers); for (const name of ["Cookie", "Cf-Access-Jwt-Assertion", "X-Quollity-Role", "X-Quollity-Identity", "X-Quollity-Signature", "X-Quollity-Timestamp"]) headers.delete(name); headers.set("X-Quollity-Role", auth.role); if (auth.identity) headers.set("X-Quollity-Identity", auth.identity);
++  const headers = new Headers(c.req.raw.headers); stripInternal(headers); headers.set("X-Quollity-Role", auth.role); if (auth.identity) headers.set("X-Quollity-Identity", auth.identity);
+   if (c.env.QUOLLITY_INTERNAL_SECRET) { const internal = await internalSignature(c.env.QUOLLITY_INTERNAL_SECRET, new Request(target, { method: c.req.method }), auth.role, auth.identity ?? ""); headers.set("X-Quollity-Timestamp", internal.timestamp); headers.set("X-Quollity-Signature", internal.signature); }
+   const response = await binding.fetch(new Request(target, { method: c.req.method, headers, body: ["GET", "HEAD"].includes(c.req.method) ? undefined : c.req.raw.body }));
+   const refreshed = await refreshSessionCookie(c.req.raw, c.env);
+--- /dev/null
++++ b/src/places-agent-contract.ts
+@@ -0,0 +1,231 @@
++// Shared verbatim with the gateway. No platform or package dependencies.
++export const agentScopes = [
++  'places:read',
++  'places:lookup',
++  'places:create',
++  'visits:create',
++  'places:location:update',
++] as const;
++export type AgentScope = (typeof agentScopes)[number];
++export type AgentClaims = {
++  tokenId: string;
++  identity: string;
++  scopes: AgentScope[];
++};
++export type AgentToken = AgentClaims & {
++  hash: string;
++  expiresAt: string;
++  disabled: boolean;
++};
++const encoder = new TextEncoder();
++export async function sha256(value: string | Uint8Array<ArrayBuffer>) {
++  const bytes = typeof value === 'string' ? encoder.encode(value) : value;
++  return Array.from(
++    new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
++    (b) => b.toString(16).padStart(2, '0'),
++  ).join('');
++}
++export function requiredAgentScope(
++  method: string,
++  path: string,
++): AgentScope | null {
++  if (
++    method === 'GET' &&
++    [
++      '/api/session',
++      '/api/types',
++      '/api/people',
++      '/api/trips',
++      '/api/openapi.json',
++      '/api/places',
++      '/api/places/rankings',
++    ].includes(path)
++  )
++    return 'places:read';
++  if (method === 'GET' && /^\/api\/places\/[a-f0-9-]{36}$/.test(path))
++    return 'places:read';
++  if (method === 'POST' && path === '/api/place-lookups')
++    return 'places:lookup';
++  if (method === 'POST' && ['/api/places', '/api/places/import'].includes(path))
++    return 'places:create';
++  if (method === 'POST' && /^\/api\/places\/[a-f0-9-]{36}\/visits$/.test(path))
++    return 'visits:create';
++  if (
++    (method === 'POST' &&
++      /^\/api\/places\/[a-f0-9-]{36}\/location-preview$/.test(path)) ||
++    (method === 'PATCH' &&
++      /^\/api\/places\/[a-f0-9-]{36}\/location$/.test(path))
++  )
++    return 'places:location:update';
++  return null;
++}
++export function parseAgentClaims(value: unknown): AgentClaims | null {
++  if (!value || typeof value !== 'object') return null;
++  const data = value as Record<string, unknown>;
++  if (
++    typeof data.tokenId !== 'string' ||
++    !/^[a-zA-Z0-9_-]{1,100}$/.test(data.tokenId) ||
++    typeof data.identity !== 'string' ||
++    data.identity.length > 254 ||
++    !data.identity.includes('@') ||
++    !Array.isArray(data.scopes) ||
++    !data.scopes.length ||
++    data.scopes.length > agentScopes.length ||
++    !data.scopes.every((s) => agentScopes.includes(s))
++  )
++    return null;
++  return {
++    tokenId: data.tokenId,
++    identity: data.identity.toLowerCase(),
++    scopes: [...new Set(data.scopes)],
++  };
++}
++export async function authenticateAgent(
++  authorization: string,
++  registry?: string,
++): Promise<AgentClaims | null> {
++  if (!registry || !/^Bearer qp_[a-zA-Z0-9_-]{43}$/.test(authorization))
++    return null;
++  let records: unknown;
++  try {
++    records = JSON.parse(registry);
++  } catch {
++    return null;
++  }
++  if (!Array.isArray(records) || records.length > 100) return null;
++  const hash = await sha256(authorization.slice(7));
++  for (const raw of records) {
++    const claims = parseAgentClaims(raw);
++    if (!claims) continue;
++    const entry = raw as Record<string, unknown>;
++    if (typeof entry.hash !== 'string' || !/^[0-9a-f]{64}$/.test(entry.hash))
++      continue;
++    // Fixed-length comparison, including unsuccessful token matches.
++    let diff = 0;
++    for (let i = 0; i < 64; i++)
++      diff |= hash.charCodeAt(i) ^ entry.hash.charCodeAt(i);
++    if (
++      diff === 0 &&
++      entry.disabled === false &&
++      typeof entry.expiresAt === 'string' &&
++      Date.parse(entry.expiresAt) > Date.now()
++    )
++      return claims;
++  }
++  return null;
++}
++export async function boundedBytes(
++  request: Pick<Request, 'body'>,
++  limit = 131072,
++): Promise<Uint8Array<ArrayBuffer>> {
++  if (!request.body) return new Uint8Array();
++  const reader = request.body.getReader();
++  const chunks: Uint8Array[] = [];
++  let length = 0;
++  try {
++    while (true) {
++      const { value, done } = await reader.read();
++      if (done) break;
++      length += value.length;
++      if (length > limit) {
++        await reader.cancel();
++        throw new RangeError('Request exceeds 128 KiB.');
++      }
++      chunks.push(value);
++    }
++  } finally {
++    reader.releaseLock();
++  }
++  const result = new Uint8Array(length);
++  let offset = 0;
++  for (const chunk of chunks) {
++    result.set(chunk, offset);
++    offset += chunk.length;
++  }
++  return result;
++}
++function payload(
++  request: Pick<Request, 'url' | 'method' | 'headers'>,
++  claims: AgentClaims,
++  timestamp: string,
++  bodyHash: string,
++) {
++  const url = new URL(request.url);
++  return JSON.stringify([
++    'places-agent-v1',
++    timestamp,
++    request.method,
++    url.pathname + url.search,
++    claims.tokenId,
++    claims.identity,
++    [...claims.scopes].sort(),
++    bodyHash,
++    request.headers.get('Idempotency-Key') ?? '',
++  ]);
++}
++function base64url(bytes: Uint8Array) {
++  return btoa(String.fromCharCode(...bytes))
++    .replaceAll('+', '-')
++    .replaceAll('/', '_')
++    .replace(/=+$/, '');
++}
++export async function agentSignature(
++  secret: string,
++  request: Pick<Request, 'url' | 'method' | 'headers'>,
++  claims: AgentClaims,
++  timestamp: string,
++  bodyHash: string,
++) {
++  const key = await crypto.subtle.importKey(
++    'raw',
++    encoder.encode(secret),
++    { name: 'HMAC', hash: 'SHA-256' },
++    false,
++    ['sign'],
++  );
++  return base64url(
++    new Uint8Array(
++      await crypto.subtle.sign(
++        'HMAC',
++        key,
++        encoder.encode(payload(request, claims, timestamp, bodyHash)),
++      ),
++    ),
++  );
++}
++export async function verifyAgentSignature(
++  secret: string,
++  request: Pick<Request, 'url' | 'method' | 'headers'>,
++  claims: AgentClaims,
++  timestamp: string,
++  signed: string,
++  bodyHash: string,
++) {
++  if (
++    !/^\d+$/.test(timestamp) ||
++    Math.abs(Date.now() / 1000 - Number(timestamp)) > 60 ||
++    !/^[A-Za-z0-9_-]{43}$/.test(signed)
++  )
++    return false;
++  try {
++    const bytes = Uint8Array.from(
++      atob(signed.replaceAll('-', '+').replaceAll('_', '/') + '='),
++      (c) => c.charCodeAt(0),
++    );
++    const key = await crypto.subtle.importKey(
++      'raw',
++      encoder.encode(secret),
++      { name: 'HMAC', hash: 'SHA-256' },
++      false,
++      ['verify'],
++    );
++    return await crypto.subtle.verify(
++      'HMAC',
++      key,
++      bytes,
++      encoder.encode(payload(request, claims, timestamp, bodyHash)),
++    );
++  } catch {
++    return false;
++  }
++}
+--- /dev/null
++++ b/test/places-agent.test.ts
+@@ -0,0 +1,147 @@
++import { describe, it, expect } from "vitest";
++import app from "../src/index";
++import {
++  sha256,
++  verifyAgentSignature,
++  parseAgentClaims,
++  type AgentClaims,
++} from "../src/places-agent-contract";
++const token = "qp_" + "a".repeat(43),
++  secret = "test-internal-secret";
++const claims: AgentClaims = {
++  tokenId: "agent-test",
++  identity: "mhinz.mh22@gmail.com",
++  scopes: ["places:read", "places:lookup", "places:create"],
++};
++async function setup(overrides = {}) {
++  const captured: Request[] = [];
++  const env = {
++    PLACES_AGENT_TOKENS: JSON.stringify([
++      {
++        ...claims,
++        hash: await sha256(token),
++        expiresAt: "2099-01-01",
++        disabled: false,
++        ...overrides,
++      },
++    ]),
++    QUOLLITY_INTERNAL_SECRET: secret,
++    EDITOR_EMAILS: claims.identity,
++    SESSION_SIGNING_SECRET: "test-cookie-secret",
++    PLACES: {
++      fetch: async (request: Request) => {
++        captured.push(request);
++        const actor = parseAgentClaims(
++          JSON.parse(request.headers.get("X-Quollity-Agent")!),
++        )!;
++        expect(
++          await verifyAgentSignature(
++            secret,
++            request,
++            actor,
++            request.headers.get("X-Quollity-Timestamp")!,
++            request.headers.get("X-Quollity-Signature")!,
++            await sha256(await request.clone().text()),
++          ),
++        ).toBe(true);
++        return Response.json({ ok: true });
++      },
++    },
++  };
++  return { env, captured };
++}
++async function request(
++  env: Record<string, unknown>,
++  path = "/places/api/places",
++  authorization = `Bearer ${token}`,
++  body?: unknown,
++  extra: Record<string, string> = {},
++) {
++  return app.request(
++    new Request("https://quollity.uk" + path, {
++      method: body ? "POST" : "GET",
++      headers: {
++        Authorization: authorization,
++        ...(body
++          ? {
++              "Content-Type": "application/json",
++              "Idempotency-Key": "test-intent",
++            }
++          : {}),
++        ...extra,
++      },
++      body: body ? JSON.stringify(body) : undefined,
++    }),
++    undefined,
++    env,
++  );
++}
++describe("Places agent gateway", () => {
++  it("authenticates tokens, strips external credentials and forged delegation, and signs body/query/key/owner/scopes", async () => {
++    const { env, captured } = await setup();
++    expect(
++      (
++        await request(
++          env,
++          "/places/api/places?country=GB",
++          `Bearer ${token}`,
++          { name: "Test", placeTypeId: "other" },
++          {
++            Cookie: "old-cookie",
++            "X-Quollity-Agent": "forged",
++            "X-Quollity-Role": "viewer",
++            "X-Quollity-Identity": "wrong@example.com",
++            "X-Quollity-Other": "untrusted",
++          },
++        )
++      ).status,
++    ).toBe(200);
++    const forwarded = captured[0];
++    expect(new URL(forwarded.url).pathname).toBe("/api/places");
++    expect(new URL(forwarded.url).search).toBe("?country=GB");
++    expect(forwarded.headers.get("Authorization")).toBeNull();
++    expect(forwarded.headers.get("Cookie")).toBeNull();
++    expect(forwarded.headers.get("X-Quollity-Other")).toBeNull();
++    expect(forwarded.headers.get("X-Quollity-Identity")).toBe(claims.identity);
++    expect(forwarded.headers.get("X-Quollity-Role")).toBeNull();
++  });
++  it("rejects expired, disabled, malformed, and absent credentials without forwarding", async () => {
++    for (const override of [
++      { expiresAt: "2000-01-01" },
++      { disabled: true },
++      { identity: "not-editor@example.com" },
++    ]) {
++      const { env, captured } = await setup(override);
++      expect((await request(env)).status).toBeGreaterThanOrEqual(400);
++      expect(captured).toHaveLength(0);
++    }
++    const { env, captured } = await setup();
++    expect((await request(env, undefined, "Bearer wrong")).status).toBe(401);
++    expect(captured).toHaveLength(0);
++  });
++  it("blocks scope and cross-component access and rejects oversized bodies", async () => {
++    const { env, captured } = await setup({ scopes: ["places:read"] });
++    expect(
++      (await request(env, undefined, undefined, { name: "No" })).status,
++    ).toBe(403);
++    for (const path of [
++      "/zoos/api/places",
++      "/trips/api/trips",
++      "/snaps/photos/test",
++      "/api/session",
++      "/places/",
++      "/places/api/boards",
++    ])
++      expect((await request(env, path)).status).toBe(403);
++    expect(captured).toHaveLength(0);
++    const allowed = await setup();
++    expect(
++      (
++        await request(allowed.env, undefined, undefined, {
++          notes: "x".repeat(131073),
++        })
++      ).status,
++    ).toBe(413);
++    expect(allowed.captured).toHaveLength(0);
++  });
++});

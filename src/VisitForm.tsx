@@ -1,3 +1,4 @@
+import { useSaveIntent } from './save-intent';
 import type { Visit } from '../shared/contracts';
 import { post, put, schemas } from './api';
 import { MutationForm, nullableNumber, nullableText, text } from './components';
@@ -12,6 +13,7 @@ export function VisitForm({
   onDone: () => void;
 }) {
   const { people, trips, tripsError, refresh } = useReferenceData();
+  const saveKey = useSaveIntent();
   return (
     <MutationForm
       label={visit ? 'Save visit' : 'Add visit'}
@@ -27,7 +29,13 @@ export function VisitForm({
           attendeeIds: data.getAll('attendees').map(String),
         };
         if (visit) await put(`/visits/${visit.id}`, input, schemas.savedVisit);
-        else await post(`/places/${placeId}/visits`, input, schemas.savedVisit);
+        else
+          await post(
+            `/places/${placeId}/visits`,
+            input,
+            schemas.savedVisit,
+            saveKey(input),
+          );
         refresh();
         onDone();
       }}

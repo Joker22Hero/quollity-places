@@ -8,6 +8,7 @@ export const personFromRow = (row: PersonRow) => ({
   active: Boolean(row.active),
 });
 export type PlaceRow = {
+  revision: number;
   id: string;
   name: string;
   short_name: string | null;
@@ -37,6 +38,7 @@ export type PlaceRow = {
 export function placeFromRow(row: PlaceRow): Place {
   return {
     id: row.id,
+    revision: row.revision,
     name: row.name,
     shortName: row.short_name,
     placeTypeId: row.place_type_id,

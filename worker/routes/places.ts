@@ -19,6 +19,22 @@ import {
   type VisitRow,
 } from '../repository';
 
+import { manualCreateSchema } from '../../shared/place-entry';
+import {
+  columns,
+  placeValues,
+  insertPlace,
+  checkDuplicates,
+  locationDetail,
+  manualOverrideStatements,
+} from '../place-entry';
+import {
+  prepareWrite,
+  commitWrite,
+  savedPlaceExpression,
+  audit,
+} from '../mutations';
+
 export const places = new Hono<AppEnv>();
 const filtersSchema = z.object({
   type: z.string().max(100).optional(),
@@ -150,54 +166,23 @@ places.get('/rankings', async (c) => {
     })),
   });
 });
-const columns = [
-  'name',
-  'short_name',
-  'place_type_id',
-  'place_kind',
-  'wishlist',
-  'city',
-  'region',
-  'country_code',
-  'latitude',
-  'longitude',
-  'website_url',
-  'description',
-  'notes',
-  'operator',
-  'meeting_point',
-  'duration_minutes',
-];
-function placeValues(input: z.output<typeof placeInputSchema>) {
-  return [
-    input.name,
-    input.shortName,
-    input.placeTypeId,
-    input.placeKind,
-    input.wishlist ? 1 : 0,
-    input.city,
-    input.region,
-    input.countryCode,
-    input.latitude,
-    input.longitude,
-    input.websiteUrl,
-    input.description,
-    input.notes,
-    input.operator,
-    input.meetingPoint,
-    input.durationMinutes,
-  ];
-}
 places.post('/', async (c) => {
-  const input = await readJson(c.req.raw, placeInputSchema);
+  const input = await readJson(c.req.raw, manualCreateSchema);
+  const write = await prepareWrite(c, input);
+  if (write.replay) return write.replay;
   await requireType(c.env.DB, input.placeTypeId);
+  const { duplicateReviewToken, ...values } = input;
+  await checkDuplicates(c, values, duplicateReviewToken);
   const id = crypto.randomUUID();
-  await c.env.DB.prepare(
-    `INSERT INTO places(id,${columns.join(',')}) VALUES(?,${columns.map(() => '?').join(',')})`,
-  )
-    .bind(id, ...placeValues(input))
-    .run();
-  return c.json({ place: await getPlace(c.env.DB, id) }, 201);
+  return commitWrite(
+    c,
+    write,
+    [insertPlace(c.env.DB, id, input)],
+    savedPlaceExpression,
+    [id],
+    201,
+    id,
+  );
 });
 places.get('/:id', async (c) => {
   const id = c.req.param('id');
@@ -221,6 +206,7 @@ places.get('/:id', async (c) => {
   ]);
   return c.json({
     place,
+    location: await locationDetail(c.env.DB, id),
     visits: await visitsFromRows(c.env.DB, visitRows.results),
     snaps: snaps.results.map(snapFromRow),
     boards: boards.results.map((row) => ({
@@ -256,11 +242,21 @@ places.put('/:id', async (c) => {
         'Remove this place from incompatible ranking boards before changing its type or location.',
       );
   }
-  await c.env.DB.prepare(
-    `UPDATE places SET ${columns.map((column) => `${column}=?`).join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=? AND archived_at IS NULL`,
-  )
-    .bind(...placeValues(input), id)
-    .run();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE places SET ${columns.map((column) => `${column}=?`).join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=? AND archived_at IS NULL`,
+    ).bind(...placeValues(input), id),
+    ...manualOverrideStatements(c.env.DB, id, current, input),
+    ...(current.placeKind === 'physical_place' &&
+    input.placeKind === 'experience'
+      ? [
+          c.env.DB.prepare(
+            "UPDATE place_sources SET purpose='location' WHERE place_id=? AND purpose='identity'",
+          ).bind(id),
+        ]
+      : []),
+    audit(c, 'place.update', id),
+  ]);
   return c.json({ place: await getPlace(c.env.DB, id) });
 });
 places.put('/:id/archive', async (c) => {

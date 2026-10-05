@@ -80,6 +80,7 @@ export const placeInputSchema = z
 export const placeSchema = z.object({
   ...placeFields,
   id: z.uuid(),
+  revision: z.number().int().positive().default(1),
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),

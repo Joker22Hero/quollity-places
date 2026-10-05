@@ -29,6 +29,8 @@ The production build uses `/places/` and gateway authentication. The private Wor
 
 Read the [architecture](docs/architecture.md), [API contract](docs/api.md), and [integration/release notes](docs/integration.md) for implementation details and verification limits. A reviewable [gateway patch](docs/gateway-integration.patch) is included.
 
+Place entry supports search and automatic location filling, duplicate checks, manual fallback, and scoped agent API access. See the [setup and agent guide](docs/agent-api.md) and [design](docs/place-entry-design.md). External lookup requires a Geoapify key; production agent access requires the gateway token registry and coordinated release.
+
 ## Confirmed decisions
 
 - Display and rank by the **average of active rated visits**; keep individual visit scores.

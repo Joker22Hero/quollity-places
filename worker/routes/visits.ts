@@ -10,6 +10,7 @@ import {
   visitsFromRows,
   type VisitRow,
 } from '../repository';
+import { prepareWrite, commitWrite, savedVisitExpression } from '../mutations';
 import { validateTrip } from '../trips';
 
 export const visits = new Hono<AppEnv>();
@@ -47,8 +48,10 @@ function attendeeStatements(db: D1Database, id: string, ids: string[]) {
 }
 visits.post('/places/:placeId/visits', async (c) => {
   const placeId = c.req.param('placeId');
-  await requireActivePlace(c.env.DB, placeId);
   const input = await readJson(c.req.raw, visitInputSchema);
+  const write = await prepareWrite(c, input);
+  if (write.replay) return write.replay;
+  await requireActivePlace(c.env.DB, placeId);
   await validateAttendees(c.env.DB, input.attendeeIds);
   const id = crypto.randomUUID();
   const person = c.get('session').person!;
@@ -79,8 +82,7 @@ visits.post('/places/:placeId/visits', async (c) => {
     ),
   );
   statements.push(...attendeeStatements(c.env.DB, id, input.attendeeIds));
-  await c.env.DB.batch(statements);
-  return c.json({ visit: await visitById(c.env.DB, id) }, 201);
+  return commitWrite(c, write, statements, savedVisitExpression, [id], 201, id);
 });
 visits.get('/visits', async (c) => {
   const tripId = c.req.query('tripId');

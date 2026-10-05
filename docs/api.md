@@ -31,6 +31,22 @@ All paths below are child-Worker paths. Through the gateway prefix them with `/p
 
 `PUT` for a place or visit replaces its editable fields; omitted optional values become defaults or null. Use the full input object when editing. Shared request/response schemas in `shared/contracts.ts` are the authoritative field contracts. New entities receive server-generated UUIDs. Creates return HTTP 201, updates return 200, and reference unlinking returns 204.
 
+## Lookup, import, and agent access
+
+The [setup and agent guide](agent-api.md) documents credential provisioning, duplicate review, retry rules, and location repair. The authenticated `GET /api/openapi.json` provides schemas for agent operations. New endpoints are defined in `shared/place-entry.ts`.
+
+| Method | Path                               | Purpose                                                            |
+| ------ | ---------------------------------- | ------------------------------------------------------------------ |
+| POST   | `/api/place-lookups`               | Search saved places and external candidates; no place creation.    |
+| POST   | `/api/places/import`               | Import an explicitly selected snapshot or reuse an exact identity. |
+| POST   | `/api/places/:id/location-preview` | Preview selected location changes and protected manual values.     |
+| PATCH  | `/api/places/:id/location`         | Apply explicit fields with a revision precondition.                |
+| GET    | `/api/openapi.json`                | Agent API specification.                                           |
+
+Lookup needs editor access and is limited to 30 requests per principal per minute; 429 responses include `Retry-After`. Import requires `Idempotency-Key`; agent manual place/visit creates require it too. Browser creates supply one automatically. Identical committed requests replay their original status/body for seven days; changed requests with the same key return 409. A duplicate-review retry uses a new key because its body changed.
+
+Place detail includes `location.sources` (with attribution/hierarchy/precision) and `location.provenance`. Place responses include an integer `revision`. Existing full-replacement PUTs continue to work and mark changed location fields as manual overrides. New errors retain `error` and add stable `code` and optional `details`; existing errors remain compatible.
+
 ## Directory filters
 
 `q`, `type`, `country` (uppercase two-letter code), `region`, `trip`, `attendee` (person UUID), `year` (four digits), `minRating`, `wishlist=true|false`, `hasSnaps=true|false`, `archived=true|false`, `sort=name|rating|recent`, `limit`, and `offset`.

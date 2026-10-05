@@ -10,13 +10,19 @@ import { places } from './routes/places';
 import { visits } from './routes/visits';
 import { boards } from './routes/boards';
 import { snaps } from './routes/snaps';
+import { placeEntry } from './routes/place-entry';
+import { agentSession } from './agent';
+import { openapi } from './openapi';
 
 export const app = new Hono<AppEnv>();
 app.use('/api/*', async (c, next) => {
   c.header('Cache-Control', 'private, no-store');
   c.header('X-Content-Type-Options', 'nosniff');
-  const session = await authenticate(c.req.raw, c.env);
-  c.set('session', session);
+  if (c.req.header('Authorization') !== undefined)
+    fail(401, 'Authenticate bearer credentials through the Quollity gateway.');
+  if (!(await agentSession(c)))
+    c.set('session', await authenticate(c.req.raw, c.env));
+  const session = c.get('session');
   if (!['GET', 'HEAD'].includes(c.req.method)) {
     if (session.readOnly) fail(403, 'An editor account is required.');
     const origin = c.req.header('Origin');
@@ -83,6 +89,8 @@ app.get('/api/trips', async (c) =>
     ),
   }),
 );
+app.get('/api/openapi.json', (c) => c.json(openapi));
+app.route('/api', placeEntry);
 app.route('/api/places', places);
 app.route('/api', visits);
 app.route('/api/boards', boards);
@@ -92,7 +100,12 @@ app.get('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 app.onError((error, c) => {
   c.header('Cache-Control', 'private, no-store');
   if (error instanceof HTTPException)
-    return c.json({ error: error.message }, error.status);
+    return error
+      .getResponse()
+      .headers.get('Content-Type')
+      ?.includes('application/json')
+      ? error.getResponse()
+      : c.json({ error: error.message }, error.status);
   if (
     /constraint failed|UNIQUE constraint|FOREIGN KEY constraint/i.test(
       error.message,

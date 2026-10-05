@@ -5,11 +5,14 @@ import { put, schemas } from './api';
 import { Action, Loading, locationName, score } from './components';
 import { PlaceForm } from './PlaceForm';
 import { VisitForm } from './VisitForm';
+import { LocationRepair } from './LocationRepair';
+import { Attribution } from './PlaceLookup';
 import { useReferenceData, useResource } from './state';
 export function PlacePage() {
   const { id } = useParams();
   const { session, refresh } = useReferenceData();
   const { data, error, loading } = useResource(`/places/${id}`, schemas.place);
+  const [repairLocation, setRepairLocation] = useState(false);
   const [editPlace, setEditPlace] = useState(false);
   const [editVisit, setEditVisit] = useState<Visit | 'new' | null>(null);
   if (!data) return <Loading loading={loading} error={error} />;
@@ -235,6 +238,29 @@ export function PlacePage() {
           </section>
           <section>
             <h2>Location</h2>
+            {canEdit && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setRepairLocation(!repairLocation)}
+              >
+                Find location
+              </button>
+            )}
+            {repairLocation && canEdit && (
+              <LocationRepair
+                place={place}
+                onDone={() => setRepairLocation(false)}
+              />
+            )}
+            {data.location?.sources.slice(0, 1).map((source) => (
+              <div key={source.id}>
+                <Attribution candidate={source.candidate} />
+                {source.candidate.precision === 'approximate' && (
+                  <p className="muted">Approximate location</p>
+                )}
+              </div>
+            ))}
             <p>{locationName(place) || 'No location recorded.'}</p>
             {place.latitude !== null && place.longitude !== null && (
               <>

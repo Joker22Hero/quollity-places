@@ -17,6 +17,12 @@ export function database() {
       'utf8',
     ),
   );
+  sqlite.exec(
+    readFileSync(
+      new URL('../migrations/0003_place_entry.sql', import.meta.url),
+      'utf8',
+    ),
+  );
   function prepared(sql: string, values: SQLInputValue[] = []) {
     return {
       bind(...next: SQLInputValue[]) {
@@ -32,7 +38,7 @@ export function database() {
           meta: {},
         };
       },
-      async run() {
+      run() {
         const result = sqlite.prepare(sql).run(...values);
         return {
           success: true,
@@ -49,7 +55,7 @@ export function database() {
       sqlite.exec('BEGIN');
       try {
         const result = [];
-        for (const statement of statements) result.push(await statement.run());
+        for (const statement of statements) result.push(statement.run());
         sqlite.exec('COMMIT');
         return result;
       } catch (error) {

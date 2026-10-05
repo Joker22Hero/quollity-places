@@ -5,6 +5,7 @@ import { placeSchema } from '../shared/contracts';
 import { Directory } from '../src/Directory';
 import { PlacePage } from '../src/PlacePage';
 import { BoardPage } from '../src/BoardPage';
+import { PlaceForm } from '../src/PlaceForm';
 
 const state = vi.hoisted(() => ({
   references: {} as Record<string, unknown>,
@@ -104,6 +105,17 @@ beforeEach(() => {
 });
 
 describe('React page rendering', () => {
+  it('starts new-place entry with search and an accessible manual fallback', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <PlaceForm />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Place name and location');
+    expect(html).toContain('Add without lookup');
+    expect(html).not.toContain('name="latitude"');
+    expect(html).not.toContain('name="longitude"');
+  });
   it('shows a place once in the directory with average rating and wishlist', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
