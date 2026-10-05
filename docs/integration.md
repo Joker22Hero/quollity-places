@@ -113,3 +113,9 @@ Verified locally: 56 tests, TypeScript, production build/dry run, and mocked
 browser fixtures at 1440/820/390/320px with no overflow. Viewer/editor account
 handoffs, primary navigation, creation boundary, keyboard focus, hover/reduced
 motion and loading/error checks passed. No API, permission or database changes.
+
+Published commit `5293198` as Places Worker version
+`42cf90a2-bf85-4617-b9ee-ba54e05cd174`. The deploy retained gateway auth and
+the existing D1/Trips bindings. A minimal anonymous live `/places/` request
+returned the expected 302 access redirect. Signed-in production rendering was
+not exercised; the layout and interactions above were verified locally.
